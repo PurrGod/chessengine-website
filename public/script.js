@@ -1,7 +1,8 @@
 // UTF-8 (no BOM).
 
 /** ===== State ===== */
-let game, board;
+let game, board, historyGame;
+let historyIndex = -1;
 
 // Sides
 let playerWhite = 'human';
@@ -70,10 +71,8 @@ const evalVertText  = () => qs('#evalVertText');
 /** ===== Layout & Board size ===== */
 function setBoardSize(px) {
   document.documentElement.style.setProperty('--board-size', px + 'px');
-  // +72 includes eval bar + gaps
   document.documentElement.style.setProperty('--left-col', (px + 72) + 'px');
-  // If the viewport can't fit board + right pane, stack columns
-  const needed = px + 420 + 96; // board pane + right pane + margins
+  const needed = px + 420 + 96;
   if (window.innerWidth < needed) appGrid().classList.add('stacked');
   else appGrid().classList.remove('stacked');
   if (board) board.resize();
@@ -92,28 +91,19 @@ function renderClocks() {
 }
 function stopClock(side) {
     if (side === 'w') {
-        if (tickWhite) {
-            clearInterval(tickWhite);
-            tickWhite = null;
-        }
+        if (tickWhite) { clearInterval(tickWhite); tickWhite = null; }
     } else {
-        if (tickBlack) {
-            clearInterval(tickBlack);
-            tickBlack = null;
-        }
+        if (tickBlack) { clearInterval(tickBlack); tickBlack = null; }
     }
 }
-
 function stopAllClocks() {
     stopClock('w');
     stopClock('b');
 }
-
 function startClock(side) {
     if (!gameStarted) return;
     stopAllClocks();
     active = side;
-
     let last = performance.now();
     const tick = setInterval(() => {
         const now = performance.now();
@@ -126,19 +116,17 @@ function startClock(side) {
             statusEl().textContent = (side === 'w' ? 'White' : 'Black') + ' flagged!';
         }
     }, 100);
-
-    if (side === 'w') {
-        tickWhite = tick;
-    } else {
-        tickBlack = tick;
-    }
+    if (side === 'w') tickWhite = tick;
+    else tickBlack = tick;
 }
 
-
 /** ===== Clock layout ===== */
-function applyClockOrderForSide(side) {
-  // You are always at the bottom
-  if (side === 'w') {
+function applyClockAndBoardOrientation() {
+  const humanPlayerColor = playerWhite === 'human' ? 'w' : (playerBlack === 'human' ? 'b' : null);
+  const orientation = humanPlayerColor === 'b' ? 'black' : 'white';
+  board.orientation(orientation);
+
+  if (orientation === 'white') {
     topSide = 'b';
     bottomSide = 'w';
   } else {
@@ -154,22 +142,18 @@ function applyClockOrderForSide(side) {
 /** ===== Eval UI (vertical) ===== */
 function setEvalUI(e) {
   if (!showEval) return;
-
   if (!e) {
     evalVertFill().style.height = '50%';
     evalVertText().textContent = '—';
     return;
   }
-  // e.value is normalized to White POV (server)
   if (e.type === 'mate') {
     evalVertText().textContent = `#${e.value}`;
-    const pct = e.value > 0 ? 95 : 5; // extremes for mate
+    const pct = e.value > 0 ? 95 : 5;
     evalVertFill().style.height = `${100 - pct}%`;
   } else {
-    const cp = Math.max(-800, Math.min(800, e.value)); // clamp
-    // 0cp => 50%; +800 => ~95%; -800 => ~5%
+    const cp = Math.max(-800, Math.min(800, e.value));
     const whitePct = Math.max(5, Math.min(95, 50 + (cp / 16)));
-    // fill is the dark (worse-for-white) portion from bottom
     evalVertFill().style.height = `${100 - whitePct}%`;
     evalVertText().textContent = (cp >= 0 ? '+' : '') + (cp/100).toFixed(2);
   }
@@ -182,8 +166,8 @@ function pvUciToSan(fen, pv) {
     const toks = pv.trim().split(/\s+/);
     const out = [];
     for (const u of toks) {
-      const from = u.slice(0,2), to = u.slice(2,4), promo = u[4];
-      const m = g.move({ from, to, promotion: promo });
+      const {from, to, promotion} = {from: u.slice(0,2), to: u.slice(2,4), promotion: u[4]};
+      const m = g.move({ from, to, promotion });
       if (!m) break;
       out.push(m.san);
     }
@@ -193,12 +177,10 @@ function pvUciToSan(fen, pv) {
 
 /** ===== Highlights ===== */
 function highlightLastMove(from, to) {
-  // remove old
   if (lastMoveSquares) {
     const oldFrom = qs(`#board .square-${lastMoveSquares.from}`); if (oldFrom) oldFrom.classList.remove('square-Highlight');
     const oldTo   = qs(`#board .square-${lastMoveSquares.to}`);   if (oldTo)   oldTo.classList.remove('square-Highlight');
   }
-  // add new
   if (from && to) {
     const elFrom = qs(`#board .square-${from}`); if (elFrom) elFrom.classList.add('square-Highlight');
     const elTo   = qs(`#board .square-${to}`);   if (elTo)   elTo.classList.add('square-Highlight');
@@ -207,13 +189,10 @@ function highlightLastMove(from, to) {
 }
 
 function clearClickSelect() {
-  // remove any lingering selections (from click or drag)
-  document.querySelectorAll('#board .square-Selected')
-    .forEach(el => el.classList.remove('square-Selected'));
+  document.querySelectorAll('#board .square-Selected').forEach(el => el.classList.remove('square-Selected'));
   clickFrom = null;
-  clearLegalTargets(); // also clears dots/rings
+  clearLegalTargets();
 }
-
 
 function showLegalTargets(fromSq) {
   clearLegalTargets();
@@ -252,8 +231,7 @@ function setMovesUI() { qs('#moves').innerHTML = sanMovesHtml(); }
 /** ===== Board ===== */
 function initBoard() {
   game = new Chess();
-
-  // initial board size and layout
+  historyGame = new Chess();
   const size = parseInt(qs('#boardSize').value, 10) || 480;
   setBoardSize(size);
 
@@ -264,15 +242,10 @@ function initBoard() {
     pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png',
     showNotation: true,
     onDragStart: (src, piece) => {
-        if (!gameStarted) return false;
-        if (game.game_over()) return false;
+        if (!gameStarted || game.game_over()) return false;
         const turn = game.turn();
         const player = turn === 'w' ? playerWhite : playerBlack;
-        if (player !== 'human') return false;
-        if (piece && piece[0] !== turn) return false;
-
-
-        // NEW: keep only this piece selected
+        if (player !== 'human' || piece[0] !== turn) return false;
         clearClickSelect();
         showLegalTargets(src);
         const elFrom = document.querySelector(`#board .square-${src}`);
@@ -281,26 +254,16 @@ function initBoard() {
     },
     onDrop: (source, target) => {
         const move = game.move({ from: source, to: target, promotion: 'q' });
-
-        if (move === null) {
-            return 'snapback';
-        }
-
         clearClickSelect();
-        clearLegalTargets();
+        if (move === null) return 'snapback';
         handleMove(move);
     },
-    onSnapEnd: () => {
-      // ensure board sync
-      board.position(game.fen());
-    }
+    onSnapEnd: () => { board.position(game.fen()); }
   });
 
-  // Click-to-move via delegated events (works with orientation)
   $(document).off('click', '#board .square-55d63');
   $(document).on('click', '#board .square-55d63', function () {
-    if (!gameStarted) return;
-    if (game.game_over()) return;
+    if (!gameStarted || game.game_over()) return;
 
     const cls = this.className.split(/\s+/).find(c => /^square-[a-h][1-8]$/.test(c));
     if (!cls) return;
@@ -310,47 +273,44 @@ function initBoard() {
     const player = turn === 'w' ? playerWhite : playerBlack;
     if (player !== 'human') return;
 
-
-    if (!clickFrom) {
-        const p = game.get(sq);
-        if (p && p.color === turn) {
-            clearClickSelect();                 // NEW: ensure only one selection
+    if (clickFrom) {
+        if (sq === clickFrom) {
+            clearClickSelect();
+            return;
+        }
+        const move = game.move({ from: clickFrom, to: sq, promotion: 'q' });
+        if (move) {
+            clearClickSelect();
+            handleMove(move);
+        } else {
+            const piece = game.get(sq);
+            if (piece && piece.color === turn) {
+                clearClickSelect();
+                clickFrom = sq;
+                const el = document.querySelector(`#board .square-${sq}`);
+                if (el) el.classList.add('square-Selected');
+                showLegalTargets(sq);
+            } else {
+                clearClickSelect();
+            }
+        }
+    } else {
+        const piece = game.get(sq);
+        if (piece && piece.color === turn) {
             clickFrom = sq;
             const el = document.querySelector(`#board .square-${sq}`);
             if (el) el.classList.add('square-Selected');
             showLegalTargets(sq);
         }
-        return;
-    } else {
-        // Toggle OFF if clicking the same piece
-        if (sq === clickFrom) {
-            clearClickSelect();                 // NEW: actually clears & keeps hints off
-            return;
-        }
-
-        const move = game.move({ from: clickFrom, to: sq, promotion: 'q' });
-
-        if (move) {
-            clearClickSelect();
-            handleMove(move);
-        } else {
-            const p2 = game.get(sq);
-            if (p2 && p2.color === turn) {
-                clearClickSelect();               // NEW: clear old selection & hints
-                clickFrom = sq;
-                const el = document.querySelector(`#board .square-${sq}`);
-                if (el) el.classList.add('square-Selected');
-                showLegalTargets(sq);
-            }
-        }
     }
   });
-
   updateStatus();
 }
 
 function handleMove(move) {
-    const turn = game.turn() === 'w' ? 'b' : 'w';
+    historyGame.move(move);
+    historyIndex = -1; // Reset history view on new move
+    const turn = game.turn() === 'w' ? 'b' : 'w'; // The player who just moved
     remaining[turn] += incSec * 1000;
     board.position(game.fen());
     highlightLastMove(move.from, move.to);
@@ -360,17 +320,14 @@ function handleMove(move) {
     if (!game.game_over()) {
         const nextTurn = game.turn();
         const nextPlayer = nextTurn === 'w' ? playerWhite : playerBlack;
+        startClock(nextTurn);
         if (nextPlayer !== 'human') {
-            startClock(nextTurn);
             engineMove(game.fen(), nextTurn, nextPlayer);
-        } else {
-            startClock(nextTurn);
         }
     } else {
         stopAllClocks();
     }
 }
-
 
 /** ===== Status ===== */
 function updateStatus(msg) {
@@ -383,19 +340,16 @@ function updateStatus(msg) {
 /** ===== Engine bridge ===== */
 async function engineMove(fen, turnToMove, engine) {
   try {
-    const body = { fen, turn: turnToMove || (fen.includes(' w ') ? 'w' : 'b'), engine };
+    const body = { fen, turn: turnToMove, engine };
     if (engineTimeMode === 'movetime') {
       body.movetime = engineMoveTime;
     } else {
       body.timing = {
         mode: 'clock',
-        wtime: Math.round(remaining.w),
-        btime: Math.round(remaining.b),
-        winc: incSec * 1000,
-        binc: incSec * 1000
+        wtime: Math.round(remaining.w), btime: Math.round(remaining.b),
+        winc: incSec * 1000, binc: incSec * 1000
       };
     }
-
     const resp = await fetch('/api/make-move', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -403,18 +357,12 @@ async function engineMove(fen, turnToMove, engine) {
     });
     if (!resp.ok) throw new Error(await resp.text());
     const data = await resp.json();
-    const best = data.bestmove;
-    if (!best) throw new Error('No bestmove');
-
-    stopClock(turnToMove);
-
+    if (!data.bestmove) throw new Error('No bestmove received');
     if (showEval && data.eval) setEvalUI(data.eval);
     if (data.pv) qs('#pvText').textContent = pvUciToSan(fen, data.pv);
-
-    const from = best.slice(0,2), to = best.slice(2,4), promo = best[4];
-    const m = game.move({ from, to, promotion: promo });
+    const { from, to, promotion } = { from: data.bestmove.slice(0,2), to: data.bestmove.slice(2,4), promotion: data.bestmove[4] };
+    const m = game.move({ from, to, promotion });
     handleMove(m);
-
   } catch (e) {
     console.error(e);
     stopClock(turnToMove);
@@ -426,10 +374,11 @@ async function engineMove(fen, turnToMove, engine) {
 async function quickEvalForFen(fen) {
   try {
     const turn = fen.includes(' w ') ? 'w' : 'b';
+    const engine = playerWhite !== 'human' ? playerWhite : playerBlack;
     const resp = await fetch('/api/bestmove', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ fen, movetime: 150, turn, engine: playerWhite !== 'human' ? playerWhite : playerBlack })
+      body: JSON.stringify({ fen, movetime: 150, turn, engine })
     });
     if (!resp.ok) return;
     const data = await resp.json();
@@ -442,34 +391,20 @@ async function quickEvalForFen(fen) {
 function applySettingsFromUI() {
   playerWhite = selWhiteEngine().value;
   playerBlack = selBlackEngine().value;
-
-
   baseSec = parseInt(selBase().value, 10);
   incSec  = parseInt(selInc().value, 10);
-
   engineTimeMode = selTimeMode().value;
   engineMoveTime = parseInt(selMoveT().value, 10);
-
   showEval = !!chkShowEval().checked;
   evalVert().setAttribute('aria-hidden', showEval ? 'false' : 'true');
-
   remaining = { w: baseSec*1000, b: baseSec*1000 };
-  applyClockOrderForSide('w');
-
-  // Show/hide movetime row
+  applyClockAndBoardOrientation();
   const row = document.getElementById('movetimeRow');
   if (row) row.style.display = engineTimeMode === 'movetime' ? '' : 'none';
-
-  // Persist settings
   localStorage.setItem('chess.settings', JSON.stringify({
-    whiteEngine: playerWhite,
-    blackEngine: playerBlack,
-    base: baseSec,
-    inc: incSec,
-    timeMode: engineTimeMode,
-    movetime: engineMoveTime,
-    boardSize: parseInt(qs('#boardSize').value, 10),
-    showEval
+    whiteEngine: playerWhite, blackEngine: playerBlack,
+    base: baseSec, inc: incSec, timeMode: engineTimeMode, movetime: engineMoveTime,
+    boardSize: parseInt(qs('#boardSize').value, 10), showEval
   }));
 }
 
@@ -478,18 +413,17 @@ function resetGame() {
   stopAllClocks();
   lastMoveSquares = null;
   clearClickSelect();
-
   game.reset();
-  board.orientation('white');
+  historyGame.reset();
+  historyIndex = -1;
+  applyClockAndBoardOrientation();
   board.start();
-
   remaining = { w: baseSec*1000, b: baseSec*1000 };
   renderClocks();
   setMovesUI();
   setEvalUI(null);
   qs('#pvText').textContent = '—';
   updateStatus('Ready');
-  applyClockOrderForSide('w');
 }
 
 function startGame() {
@@ -497,52 +431,28 @@ function startGame() {
   updateStatus();
   const turn = game.turn();
   const player = turn === 'w' ? playerWhite : playerBlack;
+  startClock(turn);
   if (player !== 'human') {
-      startClock(turn);
       engineMove(game.fen(), turn, player);
-  } else {
-      startClock(turn);
   }
 }
 
 function wireUI() {
-  qs('#boardSize').addEventListener('input', (e) => {
-    const px = parseInt(e.target.value, 10);
-    setBoardSize(px);
-  });
-
+  qs('#boardSize').addEventListener('input', (e) => setBoardSize(parseInt(e.target.value, 10)));
   chkShowEval().addEventListener('change', () => {
     showEval = !!chkShowEval().checked;
     evalVert().setAttribute('aria-hidden', showEval ? 'false' : 'true');
   });
-
-  btnStart().addEventListener('click', () => {
-    applySettingsFromUI();
-    resetGame();
-    startGame();
-  });
-
-  btnReset().addEventListener('click', () => {
-    applySettingsFromUI();
-    resetGame(); // remain "Ready"
-  });
-
+  btnStart().addEventListener('click', () => { applySettingsFromUI(); resetGame(); startGame(); });
+  btnReset().addEventListener('click', () => { applySettingsFromUI(); resetGame(); });
   btnFlip().addEventListener('click', () => board.flip());
-
   selTimeMode().addEventListener('change', () => {
     engineTimeMode = selTimeMode().value;
     const row = document.getElementById('movetimeRow');
     if (row) row.style.display = engineTimeMode === 'movetime' ? '' : 'none';
   });
-
-  // Moves tools
-  qs('#btnCopyFEN').addEventListener('click', () =>
-    navigator.clipboard.writeText(game.fen()).then(() => updateStatus('FEN copied.'))
-  );
-  qs('#btnCopyPGN').addEventListener('click', () => {
-    const pgn = game.pgn();
-    navigator.clipboard.writeText(pgn).then(() => updateStatus('PGN copied.'));
-  });
+  qs('#btnCopyFEN').addEventListener('click', () => navigator.clipboard.writeText(game.fen()).then(() => updateStatus('FEN copied.')));
+  qs('#btnCopyPGN').addEventListener('click', () => navigator.clipboard.writeText(game.pgn()).then(() => updateStatus('PGN copied.')));
   qs('#btnDownloadPGN').addEventListener('click', () => {
     const blob = new Blob([game.pgn()], { type: 'text/plain' });
     const a = document.createElement('a');
@@ -553,66 +463,70 @@ function wireUI() {
   });
   qs('#btnPause').addEventListener('click', () => { stopAllClocks(); updateStatus('Paused'); });
   qs('#btnResume').addEventListener('click', () => {
-    if (!gameStarted) return;
+    if (!gameStarted || game.game_over()) return;
     const turn = game.turn();
     const player = turn === 'w' ? playerWhite : playerBlack;
-
+    startClock(turn);
     if (player !== 'human') {
-        startClock(turn);
         engineMove(game.fen(), turn, player);
-    } else {
-        startClock(turn);
     }
   });
 
-  // Simple history navigation: these pause the game
   qs('#btnBack').addEventListener('click', () => {
-    stopAllClocks(); gameStarted = false;
-    const hist = game.history({ verbose: true });
-    if (!hist.length) return;
-    game.undo();
-    board.position(game.fen(), false);
-    setMovesUI();
-    setEvalUI(null);
-    qs('#pvText').textContent = '—';
-    const last = game.history({ verbose: true }).slice(-1)[0];
-    if (last) highlightLastMove(last.from, last.to); else highlightLastMove(null, null);
-    updateStatus('Paused');
+    const history = historyGame.history({ verbose: true });
+    if (historyIndex === -1) {
+        historyIndex = history.length - 1;
+    } else {
+        historyIndex = Math.max(0, historyIndex - 1);
+    }
+
+    if (historyIndex >= 0) {
+        const tempGame = new Chess();
+        for (let i = 0; i <= historyIndex; i++) {
+            tempGame.move(history[i]);
+        }
+        board.position(tempGame.fen());
+    }
   });
+
   qs('#btnFwd').addEventListener('click', () => {
-    // Not storing redo sequence here; could be added if desired
-    updateStatus('No redo buffer'); // placeholder
+      const history = historyGame.history({ verbose: true });
+      if (historyIndex > -1 && historyIndex < history.length - 1) {
+          historyIndex++;
+          const tempGame = new Chess();
+          for (let i = 0; i <= historyIndex; i++) {
+              tempGame.move(history[i]);
+          }
+          board.position(tempGame.fen());
+      } else {
+          board.position(game.fen());
+          historyIndex = -1;
+      }
   });
+
   qs('#btnResign').addEventListener('click', () => {
-    stopAllClocks();
-    gameStarted = false;
+    stopAllClocks(); gameStarted = false;
     const turn = game.turn();
     const player = turn === 'w' ? playerWhite : playerBlack;
-    if (player === 'human') {
-        updateStatus((turn === 'w' ? 'White' : 'Black') + ' resigns.');
-    }
+    if (player === 'human') updateStatus((turn === 'w' ? 'White' : 'Black') + ' resigns.');
   });
-
-
-  // Analysis tool (independent)
   qs('#analyze').addEventListener('click', async () => {
     const fen = fenInput().value.trim();
-    const movetime = parseInt(selAnMoveT().value, 10) || 1000;
     if (!fen) { anResult().textContent = 'Please paste a FEN.'; return; }
     anResult().textContent = 'Thinking…';
     try {
       const turn = fen.includes(' w ') ? 'w' : 'b';
+      const engine = playerWhite !== 'human' ? playerWhite : playerBlack;
+      const movetime = parseInt(selAnMoveT().value, 10) || 1000;
       const resp = await fetch('/api/bestmove', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fen, movetime, turn, engine: playerWhite !== 'human' ? playerWhite : playerBlack })
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fen, movetime, turn, engine })
       });
       if (!resp.ok) throw new Error(await resp.text());
       const data = await resp.json();
       const pvSan = data.pv ? pvUciToSan(fen, data.pv) : '—';
-      anResult().textContent = `bestmove ${data.bestmove || '(none)'} | eval ${
-        data.eval ? (data.eval.type==='mate' ? ('#'+data.eval.value) : ((data.eval.value>=0?'+':'')+(data.eval.value/100).toFixed(2))) : '—'
-      } | pv ${pvSan}`;
+      const evalStr = data.eval ? (data.eval.type === 'mate' ? `#${data.eval.value}` : `${data.eval.value >= 0 ? '+' : ''}${(data.eval.value/100).toFixed(2)}`) : '—';
+      anResult().textContent = `bestmove ${data.bestmove || '(none)'} | eval ${evalStr} | pv ${pvSan}`;
       if (showEval && data.eval) setEvalUI(data.eval);
     } catch (e) {
       console.error(e);
@@ -623,59 +537,42 @@ function wireUI() {
 
 /** ===== Boot ===== */
 window.addEventListener('load', async () => {
-
   const engines = await fetch('/api/engines').then(res => res.json());
   const whiteEngineSelect = selWhiteEngine();
   const blackEngineSelect = selBlackEngine();
   engines.forEach(engine => {
-      const option1 = document.createElement('option');
-      option1.value = engine;
-      option1.textContent = engine;
-      whiteEngineSelect.appendChild(option1);
-
-      const option2 = document.createElement('option');
-      option2.value = engine;
-      option2.textContent = engine;
-      blackEngineSelect.appendChild(option2);
+      [whiteEngineSelect, blackEngineSelect].forEach(sel => {
+        const option = document.createElement('option');
+        option.value = engine;
+        option.textContent = engine;
+        sel.appendChild(option);
+      });
   });
 
-
-  // Restore saved settings if any
   const saved = localStorage.getItem('chess.settings');
   if (saved) {
     try {
       const s = JSON.parse(saved);
       if (s.whiteEngine) selWhiteEngine().value = s.whiteEngine;
       if (s.blackEngine) selBlackEngine().value = s.blackEngine;
-      if (s.base)      selBase().value = String(s.base);
-      if (s.inc!=null) selInc().value = String(s.inc);
-      if (s.timeMode)  selTimeMode().value = s.timeMode;
-      if (s.movetime)  selMoveT().value = String(s.movetime);
+      if (s.base) selBase().value = String(s.base);
+      if (s.inc != null) selInc().value = String(s.inc);
+      if (s.timeMode) selTimeMode().value = s.timeMode;
+      if (s.movetime) selMoveT().value = String(s.movetime);
       if (s.boardSize) {
-        const slider = qs('#boardSize'); slider.value = s.boardSize;
+        qs('#boardSize').value = s.boardSize;
         setBoardSize(parseInt(s.boardSize, 10));
-      } else {
-        setBoardSize(parseInt(qs('#boardSize').value, 10) || 480);
       }
-      if (typeof s.showEval === 'boolean') {
-        chkShowEval().checked = s.showEval;
-        showEval = s.showEval;
-        evalVert().setAttribute('aria-hidden', showEval ? 'false' : 'true');
-      }
+      if (typeof s.showEval === 'boolean') chkShowEval().checked = s.showEval;
     } catch {
       setBoardSize(parseInt(qs('#boardSize').value, 10) || 480);
     }
-  } else {
-    setBoardSize(parseInt(qs('#boardSize').value, 10) || 480);
   }
 
-  // Initial render & wiring
+  initBoard();
   applySettingsFromUI();
   renderClocks();
-  initBoard();
   wireUI();
-
-  // Do NOT start any clocks here; they start after pressing Start.
 });
 
 window.addEventListener('resize', () => {

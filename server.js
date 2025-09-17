@@ -1,5 +1,6 @@
 const express = require("express");
 const path = require("path");
+const fs = require("fs");
 const { spawn } = require("child_process");
 
 const app = express();
@@ -14,11 +15,24 @@ app.get("/health", (_req, res) => {
   res.status(200).json({ ok: true, host: HOST, port: PORT, time: new Date().toISOString() });
 });
 
+app.get("/api/engines", (_req, res) => {
+  const engineDir = path.join(__dirname, "engine");
+  fs.readdir(engineDir, (err, files) => {
+    if (err) {
+      console.error("Failed to read engine directory:", err);
+      return res.status(500).json({ error: "Failed to read engine directory" });
+    }
+    const engineFiles = files.filter(file => !file.endsWith('.md')); // Exclude README
+    res.json(engineFiles);
+  });
+});
+
+
 /** UCI runner: supports movetime OR clocks (wtime/btime/winc/binc)
- *  Parses 'info' for eval + PV and normalizes eval to White's POV using 'turn'.
+ * Parses 'info' for eval + PV and normalizes eval to White's POV using 'turn'.
  */
-function runUci({ fen, movetime, timing, turn }, res) {
-  const enginePath = path.join(__dirname, "engine", "chess_engine"); // adjust if your binary name differs
+function runUci({ fen, movetime, timing, turn, engine }, res) {
+  const enginePath = path.join(__dirname, "engine", engine || "chess_engine");
   const eng = spawn(enginePath, [], { stdio: ["pipe", "pipe", "pipe"] });
 
   let buf = "";
@@ -100,15 +114,15 @@ function runUci({ fen, movetime, timing, turn }, res) {
 }
 
 app.post("/api/make-move", (req, res) => {
-  const { fen, movetime, timing, turn } = req.body || {};
+  const { fen, movetime, timing, turn, engine } = req.body || {};
   if (!fen) return res.status(400).json({ error: "Missing 'fen' in body" });
-  runUci({ fen, movetime, timing, turn }, res);
+  runUci({ fen, movetime, timing, turn, engine }, res);
 });
 
 app.post("/api/bestmove", (req, res) => {
-  const { fen, movetime, turn } = req.body || {};
+  const { fen, movetime, turn, engine } = req.body || {};
   if (!fen) return res.status(400).json({ error: "Missing 'fen' in body" });
-  runUci({ fen, movetime, turn }, res);
+  runUci({ fen, movetime, turn, engine }, res);
 });
 
 // SPA fallback (keep last)

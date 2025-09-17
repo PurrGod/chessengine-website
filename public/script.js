@@ -4,8 +4,8 @@
 let game, board;
 
 // Sides
-let human = 'w';
-let engineSide = 'b';
+let playerWhite = 'human';
+let playerBlack = 'chess_engine';
 
 // Time settings
 let baseSec = 300;
@@ -18,8 +18,8 @@ let showEval = true;
 
 // Clocks (ms)
 let remaining = { w: 300000, b: 300000 };
-let tickHuman = null;
-let tickEngine = null;
+let tickWhite = null;
+let tickBlack = null;
 let active = null;      // 'w' or 'b'
 let gameStarted = false;
 
@@ -42,7 +42,8 @@ const timeBottomEl = () => qs('#time-bottom');
 const labelTopEl   = () => qs('#label-top');
 const labelBotEl   = () => qs('#label-bottom');
 
-const selColor    = () => qs('#color');
+const selWhiteEngine = () => qs('#whiteEngine');
+const selBlackEngine = () => qs('#blackEngine');
 const selBase     = () => qs('#base');
 const selInc      = () => qs('#inc');
 const selTimeMode = () => qs('#timeMode');
@@ -89,51 +90,61 @@ function renderClocks() {
   timeTopEl().textContent    = fmt(remaining[topSide]);
   timeBottomEl().textContent = fmt(remaining[bottomSide]);
 }
-function stopHumanClock() { if (tickHuman) { clearInterval(tickHuman); tickHuman = null; } if (active === human) active = null; }
-function stopEngineClock() { if (tickEngine) { clearInterval(tickEngine); tickEngine = null; } if (active === engineSide) active = null; }
-function stopAllClocks() { stopHumanClock(); stopEngineClock(); }
-
-function startHumanClock() {
-  if (!gameStarted) return;
-  stopEngineClock();
-  if (tickHuman) clearInterval(tickHuman);
-  active = human;
-  let last = performance.now();
-  tickHuman = setInterval(() => {
-    const now = performance.now();
-    const d = now - last; last = now;
-    remaining[human] = Math.max(0, remaining[human] - d);
-    renderClocks();
-    if (remaining[human] <= 0) {
-      stopHumanClock();
-      statusEl().textContent = (human === 'w' ? 'White' : 'Black') + ' flagged!';
+function stopClock(side) {
+    if (side === 'w') {
+        if (tickWhite) {
+            clearInterval(tickWhite);
+            tickWhite = null;
+        }
+    } else {
+        if (tickBlack) {
+            clearInterval(tickBlack);
+            tickBlack = null;
+        }
     }
-  }, 100);
 }
 
-function startEngineClock() {
-  if (!gameStarted) return;
-  stopHumanClock();
-  if (tickEngine) clearInterval(tickEngine);
-  active = engineSide;
-  let last = performance.now();
-  tickEngine = setInterval(() => {
-    const now = performance.now();
-    const d = now - last; last = now;
-    remaining[engineSide] = Math.max(0, remaining[engineSide] - d);
-    renderClocks();
-    if (remaining[engineSide] <= 0) {
-      stopEngineClock();
-      statusEl().textContent = (engineSide === 'w' ? 'White' : 'Black') + ' flagged!';
-    }
-  }, 100);
+function stopAllClocks() {
+    stopClock('w');
+    stopClock('b');
 }
+
+function startClock(side) {
+    if (!gameStarted) return;
+    stopAllClocks();
+    active = side;
+
+    let last = performance.now();
+    const tick = setInterval(() => {
+        const now = performance.now();
+        const d = now - last;
+        last = now;
+        remaining[side] = Math.max(0, remaining[side] - d);
+        renderClocks();
+        if (remaining[side] <= 0) {
+            stopClock(side);
+            statusEl().textContent = (side === 'w' ? 'White' : 'Black') + ' flagged!';
+        }
+    }, 100);
+
+    if (side === 'w') {
+        tickWhite = tick;
+    } else {
+        tickBlack = tick;
+    }
+}
+
 
 /** ===== Clock layout ===== */
-function applyClockOrderForHuman() {
+function applyClockOrderForSide(side) {
   // You are always at the bottom
-  if (human === 'w') { topSide = 'b'; bottomSide = 'w'; }
-  else               { topSide = 'w'; bottomSide = 'b'; }
+  if (side === 'w') {
+    topSide = 'b';
+    bottomSide = 'w';
+  } else {
+    topSide = 'w';
+    bottomSide = 'b';
+  }
 
   labelTopEl().textContent = topSide === 'w' ? 'White' : 'Black';
   labelBotEl().textContent = bottomSide === 'w' ? 'White' : 'Black';
@@ -249,14 +260,17 @@ function initBoard() {
   board = Chessboard('board', {
     draggable: true,
     position: 'start',
-    orientation: human === 'w' ? 'white' : 'black',
+    orientation: 'white',
     pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png',
     showNotation: true,
     onDragStart: (src, piece) => {
         if (!gameStarted) return false;
         if (game.game_over()) return false;
-        if (game.turn() !== human) return false;
-        if (piece && piece[0] !== (human === 'w' ? 'w' : 'b')) return false;
+        const turn = game.turn();
+        const player = turn === 'w' ? playerWhite : playerBlack;
+        if (player !== 'human') return false;
+        if (piece && piece[0] !== turn) return false;
+
 
         // NEW: keep only this piece selected
         clearClickSelect();
@@ -274,8 +288,7 @@ function initBoard() {
 
         clearClickSelect();
         clearLegalTargets();
-
-        handleHumanMoveApplied(move, source, target);
+        handleMove(move);
     },
     onSnapEnd: () => {
       // ensure board sync
@@ -293,11 +306,14 @@ function initBoard() {
     if (!cls) return;
     const sq = cls.slice(7);
 
-    if (game.turn() !== human) return;
+    const turn = game.turn();
+    const player = turn === 'w' ? playerWhite : playerBlack;
+    if (player !== 'human') return;
+
 
     if (!clickFrom) {
         const p = game.get(sq);
-        if (p && p.color === (human === 'w' ? 'w' : 'b')) {
+        if (p && p.color === turn) {
             clearClickSelect();                 // NEW: ensure only one selection
             clickFrom = sq;
             const el = document.querySelector(`#board .square-${sq}`);
@@ -307,52 +323,54 @@ function initBoard() {
         return;
     } else {
         // Toggle OFF if clicking the same piece
-        if (sq === clickFrom) { 
+        if (sq === clickFrom) {
             clearClickSelect();                 // NEW: actually clears & keeps hints off
-            return; 
-        }
-
-        // If clicked square isn't a legal move, maybe it's another friendly piece → switch selection
-        const isLegal = game.moves({ square: clickFrom, verbose: true }).some(m => m.to === sq);
-        if (!isLegal) {
-            const p2 = game.get(sq);
-            if (p2 && p2.color === (human === 'w' ? 'w' : 'b')) {
-            clearClickSelect();               // NEW: clear old selection & hints
-            clickFrom = sq;
-            const el = document.querySelector(`#board .square-${sq}`);
-            if (el) el.classList.add('square-Selected');
-            showLegalTargets(sq);
-            }
-            // otherwise: clicked empty/illegal square -> keep current selection & hints
             return;
         }
 
-        // Legal click-move → apply and then clear selection/hints
         const move = game.move({ from: clickFrom, to: sq, promotion: 'q' });
-        clearClickSelect();
-        handleHumanMoveApplied(move, move.from, move.to);
+
+        if (move) {
+            clearClickSelect();
+            handleMove(move);
+        } else {
+            const p2 = game.get(sq);
+            if (p2 && p2.color === turn) {
+                clearClickSelect();               // NEW: clear old selection & hints
+                clickFrom = sq;
+                const el = document.querySelector(`#board .square-${sq}`);
+                if (el) el.classList.add('square-Selected');
+                showLegalTargets(sq);
+            }
+        }
     }
   });
 
   updateStatus();
 }
 
-function handleHumanMoveApplied(move, from, to) {
-  // Increment for human after move
-  remaining[human] += incSec * 1000;
-
-  board.position(game.fen());
-  highlightLastMove(from, to);
-  setMovesUI();
-  updateStatus();
-
-  // Show eval for *this position* (just after your move) if enabled
-  if (showEval) quickEvalForFen(game.fen());
-
-  // Engine thinks -> tick its clock and then move
-  startEngineClock();
-  engineMove(game.fen(), game.turn());
+function handleMove(move) {
+    const turn = game.turn() === 'w' ? 'b' : 'w';
+    remaining[turn] += incSec * 1000;
+    board.position(game.fen());
+    highlightLastMove(move.from, move.to);
+    setMovesUI();
+    updateStatus();
+    if (showEval) quickEvalForFen(game.fen());
+    if (!game.game_over()) {
+        const nextTurn = game.turn();
+        const nextPlayer = nextTurn === 'w' ? playerWhite : playerBlack;
+        if (nextPlayer !== 'human') {
+            startClock(nextTurn);
+            engineMove(game.fen(), nextTurn, nextPlayer);
+        } else {
+            startClock(nextTurn);
+        }
+    } else {
+        stopAllClocks();
+    }
 }
+
 
 /** ===== Status ===== */
 function updateStatus(msg) {
@@ -363,9 +381,9 @@ function updateStatus(msg) {
 }
 
 /** ===== Engine bridge ===== */
-async function engineMove(fen, turnToMove) {
+async function engineMove(fen, turnToMove, engine) {
   try {
-    const body = { fen, turn: turnToMove || (fen.includes(' w ') ? 'w' : 'b') };
+    const body = { fen, turn: turnToMove || (fen.includes(' w ') ? 'w' : 'b'), engine };
     if (engineTimeMode === 'movetime') {
       body.movetime = engineMoveTime;
     } else {
@@ -388,33 +406,18 @@ async function engineMove(fen, turnToMove) {
     const best = data.bestmove;
     if (!best) throw new Error('No bestmove');
 
-    // Engine finished thinking
-    stopEngineClock();
+    stopClock(turnToMove);
 
-    // Before applying, show eval for *pre-engine* position (what engine saw)
     if (showEval && data.eval) setEvalUI(data.eval);
     if (data.pv) qs('#pvText').textContent = pvUciToSan(fen, data.pv);
 
-    // Apply engine move
     const from = best.slice(0,2), to = best.slice(2,4), promo = best[4];
     const m = game.move({ from, to, promotion: promo });
-    board.position(game.fen());
-    highlightLastMove(from, to);
-    updateStatus();
+    handleMove(m);
 
-    // Engine increment
-    remaining[engineSide] += incSec * 1000;
-    renderClocks();
-
-    setMovesUI();
-
-    // After the engine moves, show eval for *resulting* position
-    if (showEval) quickEvalForFen(game.fen());
-
-    if (!game.game_over() && game.turn() === human) startHumanClock();
   } catch (e) {
     console.error(e);
-    stopEngineClock();
+    stopClock(turnToMove);
     updateStatus('Engine error. Check server logs.');
   }
 }
@@ -426,7 +429,7 @@ async function quickEvalForFen(fen) {
     const resp = await fetch('/api/bestmove', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ fen, movetime: 150, turn })
+      body: JSON.stringify({ fen, movetime: 150, turn, engine: playerWhite !== 'human' ? playerWhite : playerBlack })
     });
     if (!resp.ok) return;
     const data = await resp.json();
@@ -437,8 +440,9 @@ async function quickEvalForFen(fen) {
 
 /** ===== Controls ===== */
 function applySettingsFromUI() {
-  human = selColor().value;
-  engineSide = (human === 'w') ? 'b' : 'w';
+  playerWhite = selWhiteEngine().value;
+  playerBlack = selBlackEngine().value;
+
 
   baseSec = parseInt(selBase().value, 10);
   incSec  = parseInt(selInc().value, 10);
@@ -450,7 +454,7 @@ function applySettingsFromUI() {
   evalVert().setAttribute('aria-hidden', showEval ? 'false' : 'true');
 
   remaining = { w: baseSec*1000, b: baseSec*1000 };
-  applyClockOrderForHuman();
+  applyClockOrderForSide('w');
 
   // Show/hide movetime row
   const row = document.getElementById('movetimeRow');
@@ -458,8 +462,12 @@ function applySettingsFromUI() {
 
   // Persist settings
   localStorage.setItem('chess.settings', JSON.stringify({
-    color: human, base: baseSec, inc: incSec,
-    timeMode: engineTimeMode, movetime: engineMoveTime,
+    whiteEngine: playerWhite,
+    blackEngine: playerBlack,
+    base: baseSec,
+    inc: incSec,
+    timeMode: engineTimeMode,
+    movetime: engineMoveTime,
     boardSize: parseInt(qs('#boardSize').value, 10),
     showEval
   }));
@@ -472,7 +480,7 @@ function resetGame() {
   clearClickSelect();
 
   game.reset();
-  board.orientation(human === 'w' ? 'white' : 'black');
+  board.orientation('white');
   board.start();
 
   remaining = { w: baseSec*1000, b: baseSec*1000 };
@@ -481,17 +489,19 @@ function resetGame() {
   setEvalUI(null);
   qs('#pvText').textContent = '—';
   updateStatus('Ready');
-  applyClockOrderForHuman();
+  applyClockOrderForSide('w');
 }
 
 function startGame() {
   gameStarted = true;
   updateStatus();
-
-  if (human !== game.turn()) {
-    // Engine to move first
-    startEngineClock();
-    engineMove(game.fen(), game.turn());
+  const turn = game.turn();
+  const player = turn === 'w' ? playerWhite : playerBlack;
+  if (player !== 'human') {
+      startClock(turn);
+      engineMove(game.fen(), turn, player);
+  } else {
+      startClock(turn);
   }
 }
 
@@ -544,7 +554,15 @@ function wireUI() {
   qs('#btnPause').addEventListener('click', () => { stopAllClocks(); updateStatus('Paused'); });
   qs('#btnResume').addEventListener('click', () => {
     if (!gameStarted) return;
-    if (game.turn() === human) startHumanClock(); else startEngineClock();
+    const turn = game.turn();
+    const player = turn === 'w' ? playerWhite : playerBlack;
+
+    if (player !== 'human') {
+        startClock(turn);
+        engineMove(game.fen(), turn, player);
+    } else {
+        startClock(turn);
+    }
   });
 
   // Simple history navigation: these pause the game
@@ -566,8 +584,15 @@ function wireUI() {
     updateStatus('No redo buffer'); // placeholder
   });
   qs('#btnResign').addEventListener('click', () => {
-    stopAllClocks(); gameStarted = false; updateStatus((human==='w'?'White':'Black') + ' resigns.');
+    stopAllClocks();
+    gameStarted = false;
+    const turn = game.turn();
+    const player = turn === 'w' ? playerWhite : playerBlack;
+    if (player === 'human') {
+        updateStatus((turn === 'w' ? 'White' : 'Black') + ' resigns.');
+    }
   });
+
 
   // Analysis tool (independent)
   qs('#analyze').addEventListener('click', async () => {
@@ -580,7 +605,7 @@ function wireUI() {
       const resp = await fetch('/api/bestmove', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fen, movetime, turn })
+        body: JSON.stringify({ fen, movetime, turn, engine: playerWhite !== 'human' ? playerWhite : playerBlack })
       });
       if (!resp.ok) throw new Error(await resp.text());
       const data = await resp.json();
@@ -597,13 +622,31 @@ function wireUI() {
 }
 
 /** ===== Boot ===== */
-window.addEventListener('load', () => {
+window.addEventListener('load', async () => {
+
+  const engines = await fetch('/api/engines').then(res => res.json());
+  const whiteEngineSelect = selWhiteEngine();
+  const blackEngineSelect = selBlackEngine();
+  engines.forEach(engine => {
+      const option1 = document.createElement('option');
+      option1.value = engine;
+      option1.textContent = engine;
+      whiteEngineSelect.appendChild(option1);
+
+      const option2 = document.createElement('option');
+      option2.value = engine;
+      option2.textContent = engine;
+      blackEngineSelect.appendChild(option2);
+  });
+
+
   // Restore saved settings if any
   const saved = localStorage.getItem('chess.settings');
   if (saved) {
     try {
       const s = JSON.parse(saved);
-      if (s.color)     selColor().value = s.color;
+      if (s.whiteEngine) selWhiteEngine().value = s.whiteEngine;
+      if (s.blackEngine) selBlackEngine().value = s.blackEngine;
       if (s.base)      selBase().value = String(s.base);
       if (s.inc!=null) selInc().value = String(s.inc);
       if (s.timeMode)  selTimeMode().value = s.timeMode;

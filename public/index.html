@@ -4,7 +4,6 @@
   <meta charset="utf-8" />
   <title>Chess vs My Engine</title>
 
-  <!-- chessboard.css -->
   <link rel="stylesheet" href="/vendor/@chrisoakman/chessboardjs/dist/chessboard-1.0.0.min.css" />
   <link rel="stylesheet" href="/style.css" />
 </head>
@@ -14,25 +13,20 @@
   </header>
 
   <main class="app" id="appGrid">
-    <!-- Left: Board + clocks + vertical eval -->
     <section class="board-pane">
       <div class="board-row">
-        <!-- Board + clocks stack -->
         <div class="board-col">
             <div class="clock" id="clock-top">
             <span id="label-top" class="label">Black</span>
             <span id="time-top" class="time">05:00</span>
             </div>
 
-            <!-- NEW: wrap eval bar + board so they align perfectly -->
             <div class="board-wrap">
-            <!-- Vertical eval bar (toggleable) -->
             <aside class="eval-vert" id="evalVert" aria-hidden="false" title="Evaluation (White POV)">
                 <div class="eval-vert-fill" id="evalVertFill"></div>
                 <div class="eval-vert-label mono" id="evalVertText">—</div>
             </aside>
 
-            <!-- BOARD -->
             <div id="board" class="board"></div>
             </div>
 
@@ -43,7 +37,6 @@
 
             <div id="status" class="status">Ready</div>
 
-            <!-- PV line under board -->
             <div class="card pvcard">
                 <div class="row" style="grid-template-columns:120px 1fr;">
                     <label>Best line</label>
@@ -54,18 +47,24 @@
       </div>
     </section>
 
-    <!-- Right: Controls + Analyze + Moves -->
     <aside class="controls">
       <div class="card">
         <h2>Game Settings</h2>
 
         <div class="row">
-          <label for="color">Play as</label>
-          <select id="color">
-            <option value="w" selected>White</option>
-            <option value="b">Black</option>
+          <label for="whiteEngine">White</label>
+          <select id="whiteEngine">
+            <option value="human">Human</option>
           </select>
         </div>
+
+        <div class="row">
+          <label for="blackEngine">Black</label>
+          <select id="blackEngine">
+            <option value="human">Human</option>
+          </select>
+        </div>
+
 
         <div class="row">
           <label for="base">Base time</label>
@@ -146,7 +145,6 @@
         <div id="anResult" class="mono muted"></div>
       </div>
 
-      <!-- Moves panel moved under settings + analyze -->
       <div class="card">
         <h2 style="margin-bottom:8px;">Moves</h2>
         <div id="moves" class="moves mono">—</div>
@@ -164,7 +162,6 @@
     </aside>
   </main>
 
-  <!-- JS: chess.js, jQuery, chessboard.js, app -->
   <script src="/vendor/chess.js/chess.js"></script>
   <script src="/vendor/jquery/dist/jquery.min.js"></script>
   <script src="/vendor/@chrisoakman/chessboardjs/dist/chessboard-1.0.0.min.js"></script>

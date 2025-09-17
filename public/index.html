@@ -4,30 +4,31 @@
   <meta charset="utf-8" />
   <title>Chess vs My Engine</title>
 
-  <!-- chessboard.css -->
   <link rel="stylesheet" href="/vendor/@chrisoakman/chessboardjs/dist/chessboard-1.0.0.min.css" />
   <link rel="stylesheet" href="/style.css" />
 </head>
 <body>
   <header class="app-header">
-    <h1>Play Against My Engine!</h1>
+    <h1>Chess vs My Engine</h1>
   </header>
 
   <main class="app">
     <!-- Left: Board + clocks -->
     <section class="board-pane">
       <div class="clocks">
-        <div class="clock">
-          <span class="label">Black</span>
-          <span id="clock-b" class="time">05:00</span>
+        <!-- TOP clock (opponent or you, depending on side) -->
+        <div id="clock-top" class="clock">
+          <span id="label-top" class="label">Black</span>
+          <span id="time-top" class="time">05:00</span>
         </div>
 
         <!-- BOARD -->
         <div id="board" class="board"></div>
 
-        <div class="clock">
-          <span class="label">White</span>
-          <span id="clock-w" class="time">05:00</span>
+        <!-- BOTTOM clock (always YOUR side after Start/Reset) -->
+        <div id="clock-bottom" class="clock">
+          <span id="label-bottom" class="label">White</span>
+          <span id="time-bottom" class="time">05:00</span>
         </div>
       </div>
 
@@ -119,22 +120,9 @@
   </main>
 
   <!-- JS: chess.js, jQuery, chessboard.js, app -->
-  <!-- chess.js (UMD). Prefer dist/chess.min.js; if not present, use /vendor/chess.js/chess.js -->
   <script src="/vendor/chess.js/chess.js"></script>
-
-  <!-- jQuery required by chessboard 1.0.0 -->
   <script src="/vendor/jquery/dist/jquery.min.js"></script>
-
-  <!-- chessboard.js -->
   <script src="/vendor/@chrisoakman/chessboardjs/dist/chessboard-1.0.0.min.js"></script>
-
-  <!-- Sanity logs: if any say 'undefined', the board won't render -->
-  <script>
-    console.log("[sanity] Chess:", typeof window.Chess);
-    console.log("[sanity] jQuery:", typeof window.jQuery);
-    console.log("[sanity] Chessboard:", typeof window.Chessboard);
-  </script>
-
   <script src="/script.js"></script>
 </body>
 </html>

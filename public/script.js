@@ -1,6 +1,6 @@
 // UTF-8 (no BOM).
 
-/** ===== State & refs ===== */
+/** ===== State ===== */
 let game, board;
 
 // Sides
@@ -8,27 +8,29 @@ let human = 'w';
 let engineSide = 'b';
 
 // Time settings
-let baseSec = 300;                // 5 min default
+let baseSec = 300;
 let incSec  = 0;
-let engineMoveTime = 1000;        // ms
-let engineTimeMode = 'movetime';  // 'movetime' | 'clock'
+let engineMoveTime = 1000;
+let engineTimeMode = 'movetime'; // 'movetime' | 'clock'
 
 // Clocks (ms)
 let remaining = { w: 300000, b: 300000 };
-
-// Tickers
-let tickHuman = null;   // human clock ticker
-let tickEngine = null;  // engine clock ticker
+let tickHuman = null;
+let tickEngine = null;
 let active = null;      // 'w' or 'b'
+let gameStarted = false;
 
-// Game control
-let gameStarted = false; // clocks never run until Start is pressed
+// Which side is shown top/bottom in the UI
+let topSide = 'b';
+let bottomSide = 'w';
 
-// DOM helpers
+/** ===== DOM refs ===== */
 const $ = (sel) => document.querySelector(sel);
-const statusEl = () => $('#status');
-const clockElW = () => $('#clock-w');
-const clockElB = () => $('#clock-b');
+const statusEl     = () => $('#status');
+const timeTopEl    = () => $('#time-top');
+const timeBottomEl = () => $('#time-bottom');
+const labelTopEl   = () => $('#label-top');
+const labelBotEl   = () => $('#label-bottom');
 
 const selColor    = () => $('#color');
 const selBase     = () => $('#base');
@@ -53,15 +55,15 @@ function fmt(ms) {
   return `${m}:${ss}`;
 }
 function renderClocks() {
-  clockElW().textContent = fmt(remaining.w);
-  clockElB().textContent = fmt(remaining.b);
+  timeTopEl().textContent    = fmt(remaining[topSide]);
+  timeBottomEl().textContent = fmt(remaining[bottomSide]);
 }
 function stopHumanClock() { if (tickHuman) { clearInterval(tickHuman); tickHuman = null; } if (active === human) active = null; }
 function stopEngineClock() { if (tickEngine) { clearInterval(tickEngine); tickEngine = null; } if (active === engineSide) active = null; }
 function stopAllClocks() { stopHumanClock(); stopEngineClock(); }
 
 function startHumanClock() {
-  if (!gameStarted) return; // only after Start
+  if (!gameStarted) return;
   stopEngineClock();
   if (tickHuman) clearInterval(tickHuman);
   active = human;
@@ -79,7 +81,7 @@ function startHumanClock() {
 }
 
 function startEngineClock() {
-  if (!gameStarted) return; // only after Start
+  if (!gameStarted) return;
   stopHumanClock();
   if (tickEngine) clearInterval(tickEngine);
   active = engineSide;
@@ -96,6 +98,17 @@ function startEngineClock() {
   }, 100);
 }
 
+/** ===== Mapping helper ===== */
+function applyClockOrderForHuman() {
+  // Always show opponent on top, YOU on bottom
+  if (human === 'w') { topSide = 'b'; bottomSide = 'w'; }
+  else               { topSide = 'w'; bottomSide = 'b'; }
+
+  labelTopEl().textContent = topSide === 'w' ? 'White' : 'Black';
+  labelBotEl().textContent = bottomSide === 'w' ? 'White' : 'Black';
+  renderClocks();
+}
+
 /** ===== Board setup ===== */
 function initBoard() {
   game = new Chess();
@@ -105,10 +118,8 @@ function initBoard() {
     orientation: human === 'w' ? 'white' : 'black',
     pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png',
     onDragStart: (src, piece) => {
-      // No moving before Start
       if (!gameStarted) return false;
       if (game.game_over()) return false;
-      // Only move on your turn and your color
       if (game.turn() !== human) return false;
       if (piece && piece[0] !== (human === 'w' ? 'w' : 'b')) return false;
       return true;
@@ -117,16 +128,14 @@ function initBoard() {
       const move = game.move({ from: source, to: target, promotion: 'q' });
       if (move === null) return 'snapback';
 
-      // Human has moved: add increment to human
+      // Human increment after move
       remaining[human] += incSec * 1000;
 
       board.position(game.fen());
       updateStatus();
 
-      // While engine thinks, tick engine clock
+      // Engine thinks -> tick its clock
       startEngineClock();
-
-      // Ask engine for reply
       engineMove(game.fen());
     },
   });
@@ -148,7 +157,6 @@ async function engineMove(fen) {
     if (engineTimeMode === 'movetime') {
       body.movetime = engineMoveTime;
     } else {
-      // UCI clock mode: provide clocks in ms
       body.timing = {
         mode: 'clock',
         wtime: Math.round(remaining.w),
@@ -168,7 +176,7 @@ async function engineMove(fen) {
     const best = data.bestmove;
     if (!best) throw new Error('No bestmove');
 
-    // Engine finished thinking: stop its clock first
+    // Engine finished thinking
     stopEngineClock();
 
     const from = best.slice(0,2), to = best.slice(2,4), promo = best[4];
@@ -176,11 +184,10 @@ async function engineMove(fen) {
     board.position(game.fen());
     updateStatus();
 
-    // Add increment to engine after its move
+    // Engine increment
     remaining[engineSide] += incSec * 1000;
     renderClocks();
 
-    // Resume human clock if the game continues
     if (!game.game_over() && game.turn() === human) startHumanClock();
   } catch (e) {
     console.error(e);
@@ -201,16 +208,15 @@ function applySettingsFromUI() {
   engineMoveTime = parseInt(selMoveT().value, 10);
 
   remaining = { w: baseSec*1000, b: baseSec*1000 };
-  renderClocks();
+  applyClockOrderForHuman();
 
-  // Show/hide movetime row depending on engine mode
+  // Show/hide movetime row
   const row = document.getElementById('movetimeRow');
   if (row) row.style.display = engineTimeMode === 'movetime' ? '' : 'none';
 }
 
 function resetGame() {
-  // Reset should NOT start any clock
-  gameStarted = false;
+  gameStarted = false;      // <- clocks will not run until Start
   stopAllClocks();
 
   game.reset();
@@ -220,16 +226,15 @@ function resetGame() {
   remaining = { w: baseSec*1000, b: baseSec*1000 };
   renderClocks();
   updateStatus('Ready');
+  applyClockOrderForHuman();
 }
 
 function startGame() {
-  // Called when pressing Start — this arms the clocks but
-  // doesn't start the human clock until White's first move.
   gameStarted = true;
-  updateStatus(); // show "White to move" / "Black to move"
+  updateStatus();
 
   if (human !== game.turn()) {
-    // Engine moves first -> tick its clock while it thinks
+    // Engine to move first
     startEngineClock();
     engineMove(game.fen());
   }
@@ -238,16 +243,17 @@ function startGame() {
 function wireUI() {
   btnStart().addEventListener('click', () => {
     applySettingsFromUI();
-    resetGame();   // ensure a clean slate
-    startGame();   // arm clocks; engine moves first if human is black
+    resetGame();
+    startGame();
   });
 
   btnReset().addEventListener('click', () => {
     applySettingsFromUI();
-    resetGame();   // stop clocks, set Ready; do NOT start anything
+    resetGame(); // remain in "Ready" — no clocks running
   });
 
   btnFlip().addEventListener('click', () => {
+    // Flip board only; clock order remains YOU on bottom
     board.flip();
   });
 
@@ -257,7 +263,7 @@ function wireUI() {
     if (row) row.style.display = engineTimeMode === 'movetime' ? '' : 'none';
   });
 
-  // Analysis tool (independent from main game)
+  // Analysis tool (independent)
   btnAnalyze().addEventListener('click', async () => {
     const fen = fenInput().value.trim();
     const movetime = parseInt(selAnMoveT().value, 10) || 1000;
@@ -281,18 +287,15 @@ function wireUI() {
 
 /** ===== Boot ===== */
 window.addEventListener('load', () => {
-  // If any of these are undefined, libs aren't loaded and nothing will work.
   console.log('[boot] Chess:', typeof window.Chess,
               'jQuery:', typeof window.jQuery,
               'Chessboard:', typeof window.Chessboard);
 
+  // Initial render & wiring
+  applySettingsFromUI();
   renderClocks();
   initBoard();
   wireUI();
-  applySettingsFromUI(); // sync UI -> state
 
-  // IMPORTANT: do NOT start any clock here.
-  // Clocks start only after pressing Start:
-  //  - If human is white: starts after your first move.
-  //  - If human is black: engine starts thinking immediately after Start.
+  // Do NOT start any clocks here; they start after pressing Start
 });

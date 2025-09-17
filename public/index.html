@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Play Against My Chess Engine</title>
+
+  <!-- CSS -->
+  <link rel="stylesheet" href="/vendor/@chrisoakman/chessboardjs/dist/chessboard-1.0.0.min.css" />
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <h1>Play Against My Chess Engine</h1>
+
+  <div id="board" style="width: 420px; margin: 0 auto;"></div>
+  <p id="status"></p>
+
+  <!-- chess.js -->
+  <script src="/vendor/chess.js/chess.js"></script>
+  <!-- if dist/chess.min.js doesn’t exist, fall back to /vendor/chess.js/chess.js -->
+
+  <!-- jQuery (required by chessboard.js) -->
+  <script src="/vendor/jquery/dist/jquery.min.js"></script>
+
+  <!-- chessboard.js -->
+  <script src="/vendor/@chrisoakman/chessboardjs/dist/chessboard-1.0.0.min.js"></script>
+
+  <!-- sanity check -->
+  <script>
+    console.log("Chess typeof:", typeof window.Chess);
+    console.log("jQuery typeof:", typeof window.jQuery);
+    console.log("Chessboard typeof:", typeof window.Chessboard);
+  </script>
+
+  <!-- your logic -->
+  <script src="/script.js"></script>
+</body>
+</html>

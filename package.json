@@ -1,0 +1,15 @@
+{
+  "name": "chessengine-website",
+  "version": "1.0.0",
+  "private": true,
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "@chrisoakman/chessboardjs": "^1.0.0",
+    "chess.js": "^0.10.3",
+    "express": "^5.0.0",
+    "jquery": "^3.7.1"
+  }
+}

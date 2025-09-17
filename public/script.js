@@ -13,6 +13,9 @@ let incSec  = 0;
 let engineMoveTime = 1000;
 let engineTimeMode = 'movetime'; // 'movetime' | 'clock'
 
+// Eval toggle
+let showEval = true;
+
 // Clocks (ms)
 let remaining = { w: 300000, b: 300000 };
 let tickHuman = null;
@@ -24,13 +27,10 @@ let gameStarted = false;
 let topSide = 'b';
 let bottomSide = 'w';
 
-// Last move highlight + click-to-move selection
+// Last move highlight + click-to-move selection + legal marks
 let lastMoveSquares = null;
 let clickFrom = null;
-
-// History replay for Back/Forward
-let playedMoves = [];   // array of UCI strings
-let redoStack  = [];    // array of UCI strings
+let legalTargets = []; // list of {to, capture}
 
 /** ===== DOM helpers ===== */
 const qs = (sel) => document.querySelector(sel);
@@ -47,6 +47,7 @@ const selBase     = () => qs('#base');
 const selInc      = () => qs('#inc');
 const selTimeMode = () => qs('#timeMode');
 const selMoveT    = () => qs('#movetime');
+const chkShowEval = () => qs('#showEval');
 
 const btnStart = () => qs('#start');
 const btnReset = () => qs('#reset');
@@ -61,15 +62,19 @@ const btnBack     = () => qs('#btnBack');
 const btnFwd      = () => qs('#btnFwd');
 const btnResign   = () => qs('#btnResign');
 
+const evalVert      = () => qs('#evalVert');
+const evalVertFill  = () => qs('#evalVertFill');
+const evalVertText  = () => qs('#evalVertText');
+
 /** ===== Layout & Board size ===== */
 function setBoardSize(px) {
   document.documentElement.style.setProperty('--board-size', px + 'px');
-  document.documentElement.style.setProperty('--left-col', (px + 32) + 'px');
+  // +72 includes eval bar + gaps
+  document.documentElement.style.setProperty('--left-col', (px + 72) + 'px');
   // If the viewport can't fit board + right pane, stack columns
-  const needed = px + 420 + 64; // board pane + right pane + gaps
+  const needed = px + 420 + 96; // board pane + right pane + margins
   if (window.innerWidth < needed) appGrid().classList.add('stacked');
   else appGrid().classList.remove('stacked');
-  // Resize board UI
   if (board) board.resize();
 }
 
@@ -135,72 +140,27 @@ function applyClockOrderForHuman() {
   renderClocks();
 }
 
-/** ===== Move list / highlights / eval UI ===== */
-function uciFromMoveObj(m) {
-  return m.from + m.to + (m.promotion ? m.promotion : '');
-}
-
-function highlightLastMove(from, to) {
-  // remove old
-  if (lastMoveSquares) {
-    const oldFrom = qs(`#board .square-${lastMoveSquares.from}`); if (oldFrom) oldFrom.classList.remove('square-Highlight');
-    const oldTo   = qs(`#board .square-${lastMoveSquares.to}`);   if (oldTo)   oldTo.classList.remove('square-Highlight');
-  }
-  // add new
-  if (from && to) {
-    const elFrom = qs(`#board .square-${from}`); if (elFrom) elFrom.classList.add('square-Highlight');
-    const elTo   = qs(`#board .square-${to}`);   if (elTo)   elTo.classList.add('square-Highlight');
-    lastMoveSquares = { from, to };
-  }
-}
-
-function clearClickSelect() {
-  if (clickFrom) {
-    const el = qs(`#board .square-${clickFrom}`);
-    if (el) el.classList.remove('square-Selected');
-    clickFrom = null;
-  }
-}
-
-function setClickSelect(sq) {
-  clearClickSelect();
-  const el = qs(`#board .square-${sq}`);
-  if (el) el.classList.add('square-Selected');
-  clickFrom = sq;
-}
-
-function sanMovesHtml() {
-  const hist = game.history({ verbose: true });
-  let html = '';
-  for (let i = 0; i < hist.length; i += 2) {
-    const n = Math.floor(i / 2) + 1;
-    const w = hist[i]   ? hist[i].san   : '';
-    const b = hist[i+1] ? hist[i+1].san : '';
-    html += `<span class="ply"><span class="num">${n}.</span>${w} ${b}</span>`;
-  }
-  return html || '—';
-}
-function setMovesUI() { qs('#moves').innerHTML = sanMovesHtml(); }
-
+/** ===== Eval UI (vertical) ===== */
 function setEvalUI(e) {
-  const evalText = qs('#evalText');
-  const fill     = qs('#evalFill');
+  if (!showEval) return;
 
   if (!e) {
-    evalText.textContent = '—';
-    fill.style.width = '50%';
+    evalVertFill().style.height = '50%';
+    evalVertText().textContent = '—';
     return;
   }
+  // e.value is normalized to White POV (server)
   if (e.type === 'mate') {
-    evalText.textContent = `#${e.value}`;
-    const pct = e.value > 0 ? 90 : 10;
-    fill.style.width = `${pct}%`;
+    evalVertText().textContent = `#${e.value}`;
+    const pct = e.value > 0 ? 95 : 5; // extremes for mate
+    evalVertFill().style.height = `${100 - pct}%`;
   } else {
-    // e.value is centipawns from White POV (server normalized)
-    const cp = Math.max(-800, Math.min(800, e.value)); // clamp for UI
-    const pct = Math.round(50 + (cp / 16));            // 160 cp -> ~10%
-    fill.style.width = `${Math.max(0, Math.min(100, pct))}%`;
-    evalText.textContent = (cp >= 0 ? '+' : '') + (cp/100).toFixed(2);
+    const cp = Math.max(-800, Math.min(800, e.value)); // clamp
+    // 0cp => 50%; +800 => ~95%; -800 => ~5%
+    const whitePct = Math.max(5, Math.min(95, 50 + (cp / 16)));
+    // fill is the dark (worse-for-white) portion from bottom
+    evalVertFill().style.height = `${100 - whitePct}%`;
+    evalVertText().textContent = (cp >= 0 ? '+' : '') + (cp/100).toFixed(2);
   }
 }
 
@@ -220,6 +180,64 @@ function pvUciToSan(fen, pv) {
   } catch { return pv; }
 }
 
+/** ===== Highlights ===== */
+function highlightLastMove(from, to) {
+  // remove old
+  if (lastMoveSquares) {
+    const oldFrom = qs(`#board .square-${lastMoveSquares.from}`); if (oldFrom) oldFrom.classList.remove('square-Highlight');
+    const oldTo   = qs(`#board .square-${lastMoveSquares.to}`);   if (oldTo)   oldTo.classList.remove('square-Highlight');
+  }
+  // add new
+  if (from && to) {
+    const elFrom = qs(`#board .square-${from}`); if (elFrom) elFrom.classList.add('square-Highlight');
+    const elTo   = qs(`#board .square-${to}`);   if (elTo)   elTo.classList.add('square-Highlight');
+    lastMoveSquares = { from, to };
+  }
+}
+
+function clearClickSelect() {
+  // remove any lingering selections (from click or drag)
+  document.querySelectorAll('#board .square-Selected')
+    .forEach(el => el.classList.remove('square-Selected'));
+  clickFrom = null;
+  clearLegalTargets(); // also clears dots/rings
+}
+
+
+function showLegalTargets(fromSq) {
+  clearLegalTargets();
+  legalTargets = [];
+  const moves = game.moves({ square: fromSq, verbose: true });
+  for (const mv of moves) {
+    const el = qs(`#board .square-${mv.to}`);
+    if (!el) continue;
+    const cls = mv.flags.includes('c') ? 'square-Capture' : 'square-Target';
+    el.classList.add(cls);
+    legalTargets.push({ to: mv.to, capture: cls === 'square-Capture' });
+  }
+}
+function clearLegalTargets() {
+  for (const {to} of legalTargets) {
+    const el = qs(`#board .square-${to}`);
+    if (el) { el.classList.remove('square-Target'); el.classList.remove('square-Capture'); }
+  }
+  legalTargets = [];
+}
+
+/** ===== Move list ===== */
+function sanMovesHtml() {
+  const hist = game.history({ verbose: true });
+  let html = '';
+  for (let i = 0; i < hist.length; i += 2) {
+    const n = Math.floor(i / 2) + 1;
+    const w = hist[i]   ? hist[i].san   : '';
+    const b = hist[i+1] ? hist[i+1].san : '';
+    html += `<span class="ply"><span class="num">${n}.</span>${w} ${b}</span>`;
+  }
+  return html || '—';
+}
+function setMovesUI() { qs('#moves').innerHTML = sanMovesHtml(); }
+
 /** ===== Board ===== */
 function initBoard() {
   game = new Chess();
@@ -235,44 +253,42 @@ function initBoard() {
     pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png',
     showNotation: true,
     onDragStart: (src, piece) => {
-      if (!gameStarted) return false;
-      if (game.game_over()) return false;
-      if (game.turn() !== human) return false;
-      if (piece && piece[0] !== (human === 'w' ? 'w' : 'b')) return false;
-      return true;
+        if (!gameStarted) return false;
+        if (game.game_over()) return false;
+        if (game.turn() !== human) return false;
+        if (piece && piece[0] !== (human === 'w' ? 'w' : 'b')) return false;
+
+        // NEW: keep only this piece selected
+        clearClickSelect();
+        showLegalTargets(src);
+        const elFrom = document.querySelector(`#board .square-${src}`);
+        if (elFrom) elFrom.classList.add('square-Selected');
+        return true;
     },
     onDrop: (source, target) => {
-      const move = game.move({ from: source, to: target, promotion: 'q' });
-      if (move === null) return 'snapback';
+        const move = game.move({ from: source, to: target, promotion: 'q' });
 
-      // Clear redo if new branch
-      redoStack.length = 0;
+        if (move === null) {
+            return 'snapback';
+        }
 
-      // Record UCI
-      playedMoves.push(uciFromMoveObj(move));
+        clearClickSelect();
+        clearLegalTargets();
 
-      // Increment for human after move
-      remaining[human] += incSec * 1000;
-
-      board.position(game.fen());
-      highlightLastMove(source, target);
-      clearClickSelect();
-      setMovesUI();
-      setEvalUI(null);
-      qs('#pvText').textContent = '—';
-      updateStatus();
-
-      // Engine thinks -> tick its clock
-      startEngineClock();
-      engineMove(game.fen(), game.turn());
+        handleHumanMoveApplied(move, source, target);
     },
+    onSnapEnd: () => {
+      // ensure board sync
+      board.position(game.fen());
+    }
   });
 
-  // Click-to-move via delegated events
-  // Squares have classes like "square-55d63 square-e2", so extract [a-h][1-8]
+  // Click-to-move via delegated events (works with orientation)
   $(document).off('click', '#board .square-55d63');
   $(document).on('click', '#board .square-55d63', function () {
     if (!gameStarted) return;
+    if (game.game_over()) return;
+
     const cls = this.className.split(/\s+/).find(c => /^square-[a-h][1-8]$/.test(c));
     if (!cls) return;
     const sq = cls.slice(7);
@@ -280,43 +296,62 @@ function initBoard() {
     if (game.turn() !== human) return;
 
     if (!clickFrom) {
-      const p = game.get(sq);
-      if (p && p.color === (human === 'w' ? 'w' : 'b')) {
-        setClickSelect(sq);
-      }
-      return;
-    } else {
-      if (sq === clickFrom) { clearClickSelect(); return; }
-
-      const move = game.move({ from: clickFrom, to: sq, promotion: 'q' });
-      clearClickSelect();
-
-      if (move === null) {
-        // allow changing selection to another friendly piece
-        const p2 = game.get(sq);
-        if (p2 && p2.color === (human === 'w' ? 'w' : 'b')) setClickSelect(sq);
+        const p = game.get(sq);
+        if (p && p.color === (human === 'w' ? 'w' : 'b')) {
+            clearClickSelect();                 // NEW: ensure only one selection
+            clickFrom = sq;
+            const el = document.querySelector(`#board .square-${sq}`);
+            if (el) el.classList.add('square-Selected');
+            showLegalTargets(sq);
+        }
         return;
-      }
+    } else {
+        // Toggle OFF if clicking the same piece
+        if (sq === clickFrom) { 
+            clearClickSelect();                 // NEW: actually clears & keeps hints off
+            return; 
+        }
 
-      // Clear redo if new branch
-      redoStack.length = 0;
+        // If clicked square isn't a legal move, maybe it's another friendly piece → switch selection
+        const isLegal = game.moves({ square: clickFrom, verbose: true }).some(m => m.to === sq);
+        if (!isLegal) {
+            const p2 = game.get(sq);
+            if (p2 && p2.color === (human === 'w' ? 'w' : 'b')) {
+            clearClickSelect();               // NEW: clear old selection & hints
+            clickFrom = sq;
+            const el = document.querySelector(`#board .square-${sq}`);
+            if (el) el.classList.add('square-Selected');
+            showLegalTargets(sq);
+            }
+            // otherwise: clicked empty/illegal square -> keep current selection & hints
+            return;
+        }
 
-      playedMoves.push(uciFromMoveObj(move));
-      remaining[human] += incSec * 1000;
-
-      board.position(game.fen());
-      highlightLastMove(move.from, move.to);
-      setMovesUI();
-      setEvalUI(null);
-      qs('#pvText').textContent = '—';
-      updateStatus();
-
-      startEngineClock();
-      engineMove(game.fen(), game.turn());
+        // Legal click-move → apply and then clear selection/hints
+        const move = game.move({ from: clickFrom, to: sq, promotion: 'q' });
+        clearClickSelect();
+        handleHumanMoveApplied(move, move.from, move.to);
     }
   });
 
   updateStatus();
+}
+
+function handleHumanMoveApplied(move, from, to) {
+  // Increment for human after move
+  remaining[human] += incSec * 1000;
+
+  board.position(game.fen());
+  highlightLastMove(from, to);
+  setMovesUI();
+  updateStatus();
+
+  // Show eval for *this position* (just after your move) if enabled
+  if (showEval) quickEvalForFen(game.fen());
+
+  // Engine thinks -> tick its clock and then move
+  startEngineClock();
+  engineMove(game.fen(), game.turn());
 }
 
 /** ===== Status ===== */
@@ -356,24 +391,25 @@ async function engineMove(fen, turnToMove) {
     // Engine finished thinking
     stopEngineClock();
 
+    // Before applying, show eval for *pre-engine* position (what engine saw)
+    if (showEval && data.eval) setEvalUI(data.eval);
+    if (data.pv) qs('#pvText').textContent = pvUciToSan(fen, data.pv);
+
+    // Apply engine move
     const from = best.slice(0,2), to = best.slice(2,4), promo = best[4];
     const m = game.move({ from, to, promotion: promo });
     board.position(game.fen());
     highlightLastMove(from, to);
     updateStatus();
 
-    // record engine move UCI
-    playedMoves.push(uciFromMoveObj(m));
-
-    // Move list + eval/PV
-    setMovesUI();
-    if (data.eval) setEvalUI(data.eval); else setEvalUI(null);
-    const pvSan = data.pv ? pvUciToSan(game.fen(), data.pv) : '—';
-    qs('#pvText').textContent = pvSan;
-
     // Engine increment
     remaining[engineSide] += incSec * 1000;
     renderClocks();
+
+    setMovesUI();
+
+    // After the engine moves, show eval for *resulting* position
+    if (showEval) quickEvalForFen(game.fen());
 
     if (!game.game_over() && game.turn() === human) startHumanClock();
   } catch (e) {
@@ -381,6 +417,22 @@ async function engineMove(fen, turnToMove) {
     stopEngineClock();
     updateStatus('Engine error. Check server logs.');
   }
+}
+
+/** Quick eval helper (does not play a move; small movetime) */
+async function quickEvalForFen(fen) {
+  try {
+    const turn = fen.includes(' w ') ? 'w' : 'b';
+    const resp = await fetch('/api/bestmove', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fen, movetime: 150, turn })
+    });
+    if (!resp.ok) return;
+    const data = await resp.json();
+    if (data.eval) setEvalUI(data.eval);
+    if (data.pv) qs('#pvText').textContent = pvUciToSan(fen, data.pv);
+  } catch {}
 }
 
 /** ===== Controls ===== */
@@ -394,6 +446,9 @@ function applySettingsFromUI() {
   engineTimeMode = selTimeMode().value;
   engineMoveTime = parseInt(selMoveT().value, 10);
 
+  showEval = !!chkShowEval().checked;
+  evalVert().setAttribute('aria-hidden', showEval ? 'false' : 'true');
+
   remaining = { w: baseSec*1000, b: baseSec*1000 };
   applyClockOrderForHuman();
 
@@ -405,7 +460,8 @@ function applySettingsFromUI() {
   localStorage.setItem('chess.settings', JSON.stringify({
     color: human, base: baseSec, inc: incSec,
     timeMode: engineTimeMode, movetime: engineMoveTime,
-    boardSize: parseInt(qs('#boardSize').value, 10)
+    boardSize: parseInt(qs('#boardSize').value, 10),
+    showEval
   }));
 }
 
@@ -414,8 +470,6 @@ function resetGame() {
   stopAllClocks();
   lastMoveSquares = null;
   clearClickSelect();
-  playedMoves = [];
-  redoStack = [];
 
   game.reset();
   board.orientation(human === 'w' ? 'white' : 'black');
@@ -441,64 +495,15 @@ function startGame() {
   }
 }
 
-function goBackOnePly() {
-  if (playedMoves.length === 0) return;
-  // pause clocks while navigating
-  stopAllClocks(); gameStarted = false;
-
-  const last = playedMoves.pop();
-  redoStack.push(last);
-
-  // rebuild game from start
-  const startFEN = "startpos";
-  game.reset();
-  for (const u of playedMoves) {
-    const from = u.slice(0,2), to = u.slice(2,4), promo = u[4];
-    game.move({ from, to, promotion: promo });
-  }
-  board.position(game.fen(), false);
-  setMovesUI();
-  setEvalUI(null);
-  qs('#pvText').textContent = '—';
-
-  // update last move highlight
-  const hist = game.history({ verbose: true });
-  if (hist.length) {
-    const lm = hist[hist.length - 1];
-    highlightLastMove(lm.from, lm.to);
-  } else {
-    highlightLastMove(null, null);
-  }
-  updateStatus('Paused');
-}
-
-function goForwardOnePly() {
-  if (redoStack.length === 0) return;
-  const next = redoStack.pop();
-  playedMoves.push(next);
-
-  const from = next.slice(0,2), to = next.slice(2,4), promo = next[4];
-  game.move({ from, to, promotion: promo });
-  board.position(game.fen(), false);
-  setMovesUI();
-  updateStatus('Paused');
-
-  const hist = game.history({ verbose: true });
-  const lm = hist[hist.length - 1];
-  highlightLastMove(lm.from, lm.to);
-}
-
-function resign() {
-  stopAllClocks();
-  gameStarted = false;
-  updateStatus((human==='w' ? 'White' : 'Black') + ' resigns.');
-}
-
-/** ===== Wire UI ===== */
 function wireUI() {
   qs('#boardSize').addEventListener('input', (e) => {
     const px = parseInt(e.target.value, 10);
     setBoardSize(px);
+  });
+
+  chkShowEval().addEventListener('change', () => {
+    showEval = !!chkShowEval().checked;
+    evalVert().setAttribute('aria-hidden', showEval ? 'false' : 'true');
   });
 
   btnStart().addEventListener('click', () => {
@@ -541,9 +546,28 @@ function wireUI() {
     if (!gameStarted) return;
     if (game.turn() === human) startHumanClock(); else startEngineClock();
   });
-  btnBack().addEventListener('click', goBackOnePly);
-  btnFwd().addEventListener('click',  goForwardOnePly);
-  btnResign().addEventListener('click', resign);
+
+  // Simple history navigation: these pause the game
+  qs('#btnBack').addEventListener('click', () => {
+    stopAllClocks(); gameStarted = false;
+    const hist = game.history({ verbose: true });
+    if (!hist.length) return;
+    game.undo();
+    board.position(game.fen(), false);
+    setMovesUI();
+    setEvalUI(null);
+    qs('#pvText').textContent = '—';
+    const last = game.history({ verbose: true }).slice(-1)[0];
+    if (last) highlightLastMove(last.from, last.to); else highlightLastMove(null, null);
+    updateStatus('Paused');
+  });
+  qs('#btnFwd').addEventListener('click', () => {
+    // Not storing redo sequence here; could be added if desired
+    updateStatus('No redo buffer'); // placeholder
+  });
+  qs('#btnResign').addEventListener('click', () => {
+    stopAllClocks(); gameStarted = false; updateStatus((human==='w'?'White':'Black') + ' resigns.');
+  });
 
   // Analysis tool (independent)
   qs('#analyze').addEventListener('click', async () => {
@@ -552,7 +576,6 @@ function wireUI() {
     if (!fen) { anResult().textContent = 'Please paste a FEN.'; return; }
     anResult().textContent = 'Thinking…';
     try {
-      // compute side-to-move from FEN to normalize eval
       const turn = fen.includes(' w ') ? 'w' : 'b';
       const resp = await fetch('/api/bestmove', {
         method: 'POST',
@@ -561,9 +584,11 @@ function wireUI() {
       });
       if (!resp.ok) throw new Error(await resp.text());
       const data = await resp.json();
-      const best = data.bestmove || '(none)';
       const pvSan = data.pv ? pvUciToSan(fen, data.pv) : '—';
-      anResult().textContent = `bestmove ${best} | eval ${data.eval ? (data.eval.type==='mate' ? ('#'+data.eval.value) : ( (data.eval.value>=0?'+':'')+(data.eval.value/100).toFixed(2) )) : '—'} | pv ${pvSan}`;
+      anResult().textContent = `bestmove ${data.bestmove || '(none)'} | eval ${
+        data.eval ? (data.eval.type==='mate' ? ('#'+data.eval.value) : ((data.eval.value>=0?'+':'')+(data.eval.value/100).toFixed(2))) : '—'
+      } | pv ${pvSan}`;
+      if (showEval && data.eval) setEvalUI(data.eval);
     } catch (e) {
       console.error(e);
       anResult().textContent = 'Engine error. Check server logs.';
@@ -589,6 +614,11 @@ window.addEventListener('load', () => {
       } else {
         setBoardSize(parseInt(qs('#boardSize').value, 10) || 480);
       }
+      if (typeof s.showEval === 'boolean') {
+        chkShowEval().checked = s.showEval;
+        showEval = s.showEval;
+        evalVert().setAttribute('aria-hidden', showEval ? 'false' : 'true');
+      }
     } catch {
       setBoardSize(parseInt(qs('#boardSize').value, 10) || 480);
     }
@@ -606,7 +636,6 @@ window.addEventListener('load', () => {
 });
 
 window.addEventListener('resize', () => {
-  // keep layout sane on resize
   const px = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--board-size')) || 480;
   setBoardSize(px);
 });

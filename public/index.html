@@ -2,36 +2,139 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Play Against My Chess Engine</title>
+  <title>Chess vs My Engine</title>
 
-  <!-- CSS -->
+  <!-- chessboard.css -->
   <link rel="stylesheet" href="/vendor/@chrisoakman/chessboardjs/dist/chessboard-1.0.0.min.css" />
   <link rel="stylesheet" href="/style.css" />
 </head>
 <body>
-  <h1>Play Against My Chess Engine</h1>
+  <header class="app-header">
+    <h1>Play Against My Engine!</h1>
+  </header>
 
-  <div id="board" style="width: 420px; margin: 0 auto;"></div>
-  <p id="status"></p>
+  <main class="app">
+    <!-- Left: Board + clocks -->
+    <section class="board-pane">
+      <div class="clocks">
+        <div class="clock">
+          <span class="label">Black</span>
+          <span id="clock-b" class="time">05:00</span>
+        </div>
 
-  <!-- chess.js -->
+        <!-- BOARD -->
+        <div id="board" class="board"></div>
+
+        <div class="clock">
+          <span class="label">White</span>
+          <span id="clock-w" class="time">05:00</span>
+        </div>
+      </div>
+
+      <div id="status" class="status">Ready</div>
+    </section>
+
+    <!-- Right: Controls -->
+    <aside class="controls">
+      <div class="card">
+        <h2>Game Settings</h2>
+
+        <div class="row">
+          <label for="color">Play as</label>
+          <select id="color">
+            <option value="w" selected>White</option>
+            <option value="b">Black</option>
+          </select>
+        </div>
+
+        <div class="row">
+          <label for="base">Base time</label>
+          <select id="base">
+            <option value="60">1 min</option>
+            <option value="180">3 min</option>
+            <option value="300" selected>5 min</option>
+            <option value="600">10 min</option>
+            <option value="1800">30 min</option>
+          </select>
+        </div>
+
+        <div class="row">
+          <label for="inc">Increment</label>
+          <select id="inc">
+            <option value="0" selected>0 sec</option>
+            <option value="1">+1 sec</option>
+            <option value="2">+2 sec</option>
+            <option value="5">+5 sec</option>
+          </select>
+        </div>
+
+        <div class="row">
+          <label for="timeMode">Engine time</label>
+          <select id="timeMode">
+            <option value="movetime" selected>Fixed movetime</option>
+            <option value="clock">Use clocks (wtime/btime)</option>
+          </select>
+        </div>
+
+        <div class="row" id="movetimeRow">
+          <label for="movetime">Movetime</label>
+          <select id="movetime">
+            <option value="200">0.2 sec</option>
+            <option value="500">0.5 sec</option>
+            <option value="1000" selected>1.0 sec</option>
+            <option value="2000">2.0 sec</option>
+            <option value="5000">5.0 sec</option>
+          </select>
+        </div>
+
+        <div class="buttons">
+          <button id="start" class="primary">Start</button>
+          <button id="reset">Reset</button>
+          <button id="flip">Flip Board</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Analyze a Position (FEN → Best Move)</h2>
+        <div class="row">
+          <label for="fenInput" class="stack">FEN</label>
+          <textarea id="fenInput" rows="3" placeholder="Paste a FEN here…"></textarea>
+        </div>
+        <div class="row">
+          <label for="anMovetime">Movetime</label>
+          <select id="anMovetime">
+            <option value="500">0.5 sec</option>
+            <option value="1000" selected>1.0 sec</option>
+            <option value="2000">2.0 sec</option>
+            <option value="5000">5.0 sec</option>
+            <option value="10000">10 sec</option>
+          </select>
+        </div>
+        <div class="buttons">
+          <button id="analyze">Get Best Move</button>
+        </div>
+        <div id="anResult" class="mono muted"></div>
+      </div>
+    </aside>
+  </main>
+
+  <!-- JS: chess.js, jQuery, chessboard.js, app -->
+  <!-- chess.js (UMD). Prefer dist/chess.min.js; if not present, use /vendor/chess.js/chess.js -->
   <script src="/vendor/chess.js/chess.js"></script>
-  <!-- if dist/chess.min.js doesn’t exist, fall back to /vendor/chess.js/chess.js -->
 
-  <!-- jQuery (required by chessboard.js) -->
+  <!-- jQuery required by chessboard 1.0.0 -->
   <script src="/vendor/jquery/dist/jquery.min.js"></script>
 
   <!-- chessboard.js -->
   <script src="/vendor/@chrisoakman/chessboardjs/dist/chessboard-1.0.0.min.js"></script>
 
-  <!-- sanity check -->
+  <!-- Sanity logs: if any say 'undefined', the board won't render -->
   <script>
-    console.log("Chess typeof:", typeof window.Chess);
-    console.log("jQuery typeof:", typeof window.jQuery);
-    console.log("Chessboard typeof:", typeof window.Chessboard);
+    console.log("[sanity] Chess:", typeof window.Chess);
+    console.log("[sanity] jQuery:", typeof window.jQuery);
+    console.log("[sanity] Chessboard:", typeof window.Chessboard);
   </script>
 
-  <!-- your logic -->
   <script src="/script.js"></script>
 </body>
 </html>

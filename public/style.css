@@ -40,7 +40,8 @@ body {
 }
 
 .board {
-  width: 480px;
+  width: 480px;   /* critical: gives chessboard.js concrete size */
+  height: 480px;  /* critical: prevents 0px height */
   max-width: 100%;
   margin: 12px auto;
   border-radius: 12px;
@@ -79,9 +80,8 @@ body {
   box-shadow: var(--shadow);
 }
 .card h2 { margin: 0 0 12px 0; font-size: 18px; }
-.card.tiny { padding: 12px; }
 
-.row { display: grid; grid-template-columns: 140px 1fr; gap: 10px; align-items: center; margin-bottom: 10px; }
+.row { display: grid; grid-template-columns: 160px 1fr; gap: 10px; align-items: center; margin-bottom: 10px; }
 .row .stack { align-self: start; padding-top: 6px; }
 textarea, select, input[type="text"] {
   width: 100%;
@@ -109,3 +109,8 @@ button.danger { background: var(--danger); color: white; }
 
 .muted { color: var(--muted); }
 .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; }
+
+@media (max-width: 980px) {
+  .app { grid-template-columns: 1fr; }
+  .board { width: 96vw; height: 96vw; }
+}

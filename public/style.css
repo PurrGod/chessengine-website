@@ -9,6 +9,10 @@
   --danger: #ff6b6b;
   --radius: 16px;
   --shadow: 0 8px 30px rgba(0,0,0,0.35);
+
+  /* dynamic board sizing */
+  --board-size: 480px;                /* updated by JS */
+  --left-col: calc(var(--board-size) + 32px); /* board + padding */
 }
 
 * { box-sizing: border-box; }
@@ -25,35 +29,38 @@ body {
 
 .app {
   display: grid;
-  grid-template-columns: 520px 1fr;
+  grid-template-columns: minmax(340px, var(--left-col)) 420px; /* left grows with board, right fixed */
   gap: 24px;
   padding: 20px;
-  max-width: 1200px;
+  max-width: calc(var(--left-col) + 420px + 64px);           /* container grows with board */
   margin: 0 auto;
 }
+.app.stacked { grid-template-columns: 1fr; max-width: min(100%, 1200px); } /* fall back to single column */
 
 .board-pane {
   background: var(--panel);
   border-radius: var(--radius);
   padding: 16px;
   box-shadow: var(--shadow);
+  width: var(--left-col);          /* keep pane sized to board */
+  max-width: 100%;
 }
 
 .board {
-  width: 480px;   /* critical: gives chessboard.js concrete size */
-  height: 480px;  /* critical: prevents 0px height */
+  width: var(--board-size);
+  height: var(--board-size);
   max-width: 100%;
-  margin: 12px auto;
+  margin: 10px auto;
   border-radius: 12px;
   overflow: hidden;
   box-shadow: 0 10px 35px rgba(0,0,0,0.45);
 }
 
-.clocks { display: grid; gap: 10px; }
+.clocks { display: grid; gap: 8px; }
 .clock {
   display: flex; align-items: center; justify-content: space-between;
   background: var(--panel-2);
-  padding: 10px 12px;
+  padding: 8px 10px;
   border-radius: 12px;
   font-variant-numeric: tabular-nums;
 }
@@ -61,7 +68,7 @@ body {
 .clock .time { font-size: 22px; font-weight: 700; }
 
 .status {
-  margin-top: 10px;
+  margin-top: 8px;
   text-align: center;
   color: var(--accent);
   font-weight: 600;
@@ -71,6 +78,7 @@ body {
   display: grid;
   gap: 16px;
   align-content: start;
+  width: 100%;
 }
 
 .card {
@@ -83,7 +91,7 @@ body {
 
 .row { display: grid; grid-template-columns: 160px 1fr; gap: 10px; align-items: center; margin-bottom: 10px; }
 .row .stack { align-self: start; padding-top: 6px; }
-textarea, select, input[type="text"] {
+textarea, select, input[type="text"], input[type="range"] {
   width: 100%;
   background: #0f131b;
   color: var(--text);
@@ -92,7 +100,7 @@ textarea, select, input[type="text"] {
   padding: 10px 12px;
   outline: none;
 }
-textarea:focus, select:focus { border-color: var(--primary); }
+textarea:focus, select:focus, input[type="range"]:focus { border-color: var(--primary); }
 
 .buttons { display: flex; gap: 10px; flex-wrap: wrap; }
 button {
@@ -110,7 +118,20 @@ button.danger { background: var(--danger); color: white; }
 .muted { color: var(--muted); }
 .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; }
 
-@media (max-width: 980px) {
-  .app { grid-template-columns: 1fr; }
-  .board { width: 96vw; height: 96vw; }
+/* Move list */
+.moves { max-height: 220px; overflow: auto; background:#0f131b; border:1px solid #273043; border-radius:10px; padding:10px; }
+.moves .ply { margin-right: 10px; display:inline-block; }
+.moves .num { color: var(--muted); margin-right:6px; }
+
+/* Eval bar */
+.evalbar { width: 160px; height: 12px; border-radius: 999px; background: linear-gradient(90deg, #111, #eee); position: relative; overflow: hidden; }
+.evalfill { position:absolute; left:0; top:0; bottom:0; width:50%; background: rgba(0,0,0,0.35); }
+.pv { white-space: nowrap; overflow: auto; }
+
+/* Highlights */
+.square-Highlight { box-shadow: inset 0 0 0 3px rgba(255, 225, 0, 0.75); }
+.square-Selected  { box-shadow: inset 0 0 0 3px rgba(77, 163, 255, 0.9) !important; }
+
+@media (max-width: 1100px) {
+  .app { max-width: 100%; }
 }

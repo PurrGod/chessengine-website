@@ -4,6 +4,7 @@
   <meta charset="utf-8" />
   <title>Chess vs My Engine</title>
 
+  <!-- chessboard.css -->
   <link rel="stylesheet" href="/vendor/@chrisoakman/chessboardjs/dist/chessboard-1.0.0.min.css" />
   <link rel="stylesheet" href="/style.css" />
 </head>
@@ -12,11 +13,11 @@
     <h1>Chess vs My Engine</h1>
   </header>
 
-  <main class="app">
+  <main class="app" id="appGrid">
     <!-- Left: Board + clocks -->
     <section class="board-pane">
       <div class="clocks">
-        <!-- TOP clock (opponent or you, depending on side) -->
+        <!-- TOP clock (opponent) -->
         <div id="clock-top" class="clock">
           <span id="label-top" class="label">Black</span>
           <span id="time-top" class="time">05:00</span>
@@ -25,7 +26,7 @@
         <!-- BOARD -->
         <div id="board" class="board"></div>
 
-        <!-- BOTTOM clock (always YOUR side after Start/Reset) -->
+        <!-- BOTTOM clock (you) -->
         <div id="clock-bottom" class="clock">
           <span id="label-bottom" class="label">White</span>
           <span id="time-bottom" class="time">05:00</span>
@@ -33,6 +34,39 @@
       </div>
 
       <div id="status" class="status">Ready</div>
+
+      <!-- Eval + PV -->
+      <div class="card" style="margin-top:12px;">
+        <div class="row" style="grid-template-columns: 120px 1fr;">
+          <label>Evaluation</label>
+          <div style="display:flex;align-items:center;gap:10px;">
+            <div id="evalBar" class="evalbar">
+              <div id="evalFill" class="evalfill"></div>
+            </div>
+            <div id="evalText" class="mono muted">—</div>
+          </div>
+        </div>
+        <div class="row" style="grid-template-columns: 120px 1fr;">
+          <label>Best line</label>
+          <div id="pvText" class="mono muted pv">—</div>
+        </div>
+      </div>
+
+      <!-- Move list + PGN tools -->
+      <div class="card" style="margin-top:12px;">
+        <h2 style="margin-bottom:8px;">Moves</h2>
+        <div id="moves" class="moves mono">—</div>
+        <div class="buttons" style="margin-top:10px;">
+          <button id="btnBack">← Back</button>
+          <button id="btnFwd">Forward →</button>
+          <button id="btnResign" class="danger">Resign</button>
+          <button id="btnPause">Pause</button>
+          <button id="btnResume">Resume</button>
+          <button id="btnCopyFEN">Copy FEN</button>
+          <button id="btnCopyPGN">Copy PGN</button>
+          <button id="btnDownloadPGN">Download PGN</button>
+        </div>
+      </div>
     </section>
 
     <!-- Right: Controls -->
@@ -86,6 +120,11 @@
             <option value="2000">2.0 sec</option>
             <option value="5000">5.0 sec</option>
           </select>
+        </div>
+
+        <div class="row">
+          <label for="boardSize">Board size</label>
+          <input id="boardSize" type="range" min="300" max="900" step="12" value="480" />
         </div>
 
         <div class="buttons">

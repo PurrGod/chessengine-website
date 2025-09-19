@@ -15,6 +15,9 @@
   --left-col: calc(var(--board-size) + 72px); /* board + eval + padding */
 }
 
+/* Center the title */
+.app-header { text-align: center; }
+
 * { box-sizing: border-box; }
 html, body { height: 100%; }
 body {

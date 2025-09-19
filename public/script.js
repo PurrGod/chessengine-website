@@ -111,11 +111,16 @@ function startClock(side) {
         last = now;
         remaining[side] = Math.max(0, remaining[side] - d);
         renderClocks();
+
+        // --- FIX IS HERE ---
+        // When time runs out, end the game immediately.
         if (remaining[side] <= 0) {
-            stopClock(side);
+            stopAllClocks();
+            gameStarted = false; // This prevents any more moves.
             statusEl().textContent = (side === 'w' ? 'White' : 'Black') + ' flagged!';
         }
     }, 100);
+
     if (side === 'w') tickWhite = tick;
     else tickBlack = tick;
 }
